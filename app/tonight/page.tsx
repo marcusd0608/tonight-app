@@ -1,10 +1,9 @@
 export default function TonightPage() {
   return (
-    <main style={{ padding: '2rem' }}>
-      <h1>Tonight</h1>
-      <p style={{ color: '#666', margin: '2rem 0' }}>Nobody's out yet — be the first</p>
-      
-      {/* Positioned button ready for tomorrow's wiring */}
+    <main style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
+      <h1>Tonight Feed</h1>
+      <p style={{ color: '#666', margin: '1rem 0 2rem' }}>Nobody&apos;s out yet — be the first</p>
+
       <button style={{
         width: '100%',
         padding: '14px',

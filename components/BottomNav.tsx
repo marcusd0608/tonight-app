@@ -9,8 +9,8 @@ export default function BottomNav() {
   const tabs = [
     { name: 'Tonight', href: '/tonight' },
     { name: 'Post', href: '/post' },
-    { name: 'Profile', href: '/profile' },
     { name: 'Ranks', href: '/ranks' },
+    { name: 'Profile', href: '/profile' },
   ]
 
   return (

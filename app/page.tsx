@@ -60,16 +60,25 @@ export default function AuthPage() {
       return
     }
 
-    // Check if profile row exists
+    // Only send completed profiles to the Tonight feed.
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id')
+      .select('display_name, tower, floor, major, interests')
       .eq('id', session.user.id)
-      .single()
+      .maybeSingle()
+
+    const hasInterests = Array.isArray(profile?.interests) && profile.interests.length > 0
+    const hasCompletedProfile = Boolean(
+      profile?.display_name &&
+      profile.tower &&
+      profile.floor !== null &&
+      profile.major &&
+      hasInterests
+    )
 
     setLoading(false)
-    if (profile) {
-      router.push('/feed')
+    if (hasCompletedProfile) {
+      router.push('/tonight')
     } else {
       router.push('/onboarding')
     }

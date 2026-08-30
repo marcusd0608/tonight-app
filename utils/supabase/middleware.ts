@@ -36,10 +36,24 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // If a logged-in user tries to visit the landing page, push them to the feed
+  // Resume incomplete profiles instead of treating any profile row as complete.
   if (user && request.nextUrl.pathname === '/') {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('display_name, tower, floor, major, interests')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    const hasInterests = Array.isArray(profile?.interests) && profile.interests.length > 0
+    const hasCompletedProfile = Boolean(
+      profile?.display_name &&
+      profile.tower &&
+      profile.floor !== null &&
+      profile.major &&
+      hasInterests
+    )
     const url = request.nextUrl.clone()
-    url.pathname = '/feed'
+    url.pathname = hasCompletedProfile ? '/tonight' : '/onboarding'
     return NextResponse.redirect(url)
   }
 

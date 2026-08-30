@@ -1,13 +1,5 @@
-import LogoutButton from '@/components/LogoutButton'
+import { redirect } from 'next/navigation'
 
 export default function FeedPage() {
-  return (
-    <main style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
-      <h1>Tonight Feed</h1>
-      <p>You are successfully logged in!</p>
-      <div style={{ marginTop: '2rem' }}>
-        <LogoutButton />
-      </div>
-    </main>
-  )
+  redirect('/tonight')
 }

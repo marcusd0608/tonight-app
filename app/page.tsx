@@ -1,8 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import { useEffect, useRef } from 'react'
+
+const supabase = createClient()
 
 export default function AuthPage() {
   const [email, setEmail] = useState('')
@@ -11,7 +14,50 @@ export default function AuthPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
+  const isRedirecting = useRef(false)
+  const redirectTimer = useRef<number | null>(null)
+
+  const routeAuthenticatedUser = useCallback(async (userId: string) => {
+    if (isRedirecting.current) return
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('display_name, tower, floor, major, interests')
+      .eq('id', userId)
+      .maybeSingle()
+
+    const hasInterests = Array.isArray(profile?.interests) && profile.interests.length > 0
+    const hasCompletedProfile = Boolean(
+      profile?.display_name &&
+      profile.tower &&
+      profile.floor !== null &&
+      profile.major &&
+      hasInterests
+    )
+    const destination = hasCompletedProfile ? '/tonight' : '/onboarding'
+
+    isRedirecting.current = true
+    router.refresh()
+    router.push(destination)
+    redirectTimer.current = window.setTimeout(() => {
+      window.location.href = destination
+    }, 1500)
+  }, [router])
+
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        void routeAuthenticatedUser(session.user.id)
+      }
+    })
+
+    return () => {
+      authListener.subscription.unsubscribe()
+      if (redirectTimer.current !== null) {
+        window.clearTimeout(redirectTimer.current)
+      }
+    }
+  }, [routeAuthenticatedUser])
 
 // 1. Client-side validation & send OTP
   const handleSendCode = async (e: React.FormEvent) => {
@@ -60,28 +106,15 @@ export default function AuthPage() {
       return
     }
 
-    // Only send completed profiles to the Tonight feed.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('display_name, tower, floor, major, interests')
-      .eq('id', session.user.id)
-      .maybeSingle()
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
 
-    const hasInterests = Array.isArray(profile?.interests) && profile.interests.length > 0
-    const hasCompletedProfile = Boolean(
-      profile?.display_name &&
-      profile.tower &&
-      profile.floor !== null &&
-      profile.major &&
-      hasInterests
-    )
-
-    setLoading(false)
-    if (hasCompletedProfile) {
-      router.push('/tonight')
-    } else {
-      router.push('/onboarding')
+    if (sessionError || !sessionData.session) {
+      setLoading(false)
+      setError(sessionError?.message || 'Your session could not be established. Please try again.')
+      return
     }
+
+    await routeAuthenticatedUser(sessionData.session.user.id)
   }
 
   return (

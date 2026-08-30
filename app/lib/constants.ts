@@ -25,3 +25,16 @@ export const onboardingMajors = [
   'Psychology',
   'Undecided'
 ]
+
+export const nightVibeTags = [
+  'Dancing',
+  'Live music',
+  'Rave',
+  'Concert',
+  'Chill',
+  'Social',
+  'Food',
+  'Drinks',
+  'Outdoors',
+  'Games'
+]

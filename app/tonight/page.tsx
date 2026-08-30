@@ -1,7 +1,7 @@
 'use client'
 
 import { createClient } from '@/utils/supabase/client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 type Profile = {
   id: string
@@ -26,6 +26,8 @@ type Connection = {
   recipient_id: string
   status: string
 }
+
+type FeedScope = 'floor' | 'dorm' | 'other-dorms'
 
 const cardStyle = { padding: '1rem', border: '1px solid #e5e7eb', borderRadius: '14px', background: '#fff' }
 
@@ -61,12 +63,18 @@ export default function TonightPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [feedScope, setFeedScope] = useState<FeedScope>('floor')
 
-  const loadFeed = async () => {
+  const loadFeed = useCallback(async (scope: FeedScope = feedScope) => {
     const supabase = createClient()
     const { data: authData } = await supabase.auth.getUser()
     if (!authData.user) return
     setUserId(authData.user.id)
+    const { data: blocks } = await supabase
+      .from('blocks')
+      .select('blocker_id, blocked_id')
+      .or(`blocker_id.eq.${authData.user.id},blocked_id.eq.${authData.user.id}`)
+    const blockedIds = (blocks ?? []).map((block) => block.blocker_id === authData.user.id ? block.blocked_id : block.blocker_id)
 
     const { data: currentProfile, error: profileError } = await supabase
       .from('profiles')
@@ -83,17 +91,26 @@ export default function TonightPage() {
     const { data: towerProfiles, error: towerError } = await supabase
       .from('profiles')
       .select('id, display_name, photo_url, tower, floor, major, interests, instagram_handle')
-      .eq('tower', currentProfile.tower)
     if (towerError) {
       setError(towerError.message)
       return
     }
 
-    const towerIds = (towerProfiles ?? []).map((profile) => profile.id)
-    setProfiles(towerProfiles ?? [])
+    const scopedProfiles = (towerProfiles ?? []).filter((profile) => {
+      if (scope === 'floor') return profile.tower === currentProfile.tower && profile.floor === currentProfile.floor
+      if (scope === 'dorm') return profile.tower === currentProfile.tower
+      return profile.tower !== currentProfile.tower
+    })
+    const visibleTowerProfiles = scopedProfiles.filter((profile) => !blockedIds.includes(profile.id))
+    const towerIds = visibleTowerProfiles.map((profile) => profile.id)
+    setProfiles(visibleTowerProfiles)
     setTotalUsers(towerIds.length)
 
-    if (towerIds.length === 0) return
+    if (towerIds.length === 0) {
+      setGoingOut([])
+      setConnections([])
+      return
+    }
 
     const [{ data: statuses, error: statusError }, { data: connectionRows, error: connectionError }] = await Promise.all([
       supabase.from('going_out').select('user_id, note, expires_at, created_at').in('user_id', towerIds).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
@@ -104,12 +121,12 @@ export default function TonightPage() {
       return
     }
     setGoingOut(statuses ?? [])
-    setConnections(connectionRows ?? [])
-  }
+    setConnections((connectionRows ?? []).filter((connection) => !blockedIds.includes(connection.requester_id) && !blockedIds.includes(connection.recipient_id)))
+  }, [feedScope])
 
   useEffect(() => {
-    queueMicrotask(() => { void loadFeed() })
-  }, [])
+    queueMicrotask(() => { void loadFeed(feedScope) })
+  }, [feedScope, loadFeed])
 
   const myStatus = goingOut.find((status) => status.user_id === userId)
   const incomingRequests = connections.filter((connection) => connection.recipient_id === userId && connection.status === 'pending')
@@ -125,7 +142,7 @@ export default function TonightPage() {
       expires_at: getLosAngelesExpiration()
     })
     if (insertError) setError(insertError.message)
-    else { setIsModalOpen(false); setNote(''); await loadFeed() }
+    else { setIsModalOpen(false); setNote(''); await loadFeed(feedScope) }
     setIsSubmitting(false)
   }
 
@@ -133,21 +150,21 @@ export default function TonightPage() {
     const supabase = createClient()
     const { error: deleteError } = await supabase.from('going_out').delete().eq('user_id', userId).gt('expires_at', new Date().toISOString())
     if (deleteError) setError(deleteError.message)
-    else await loadFeed()
+    else await loadFeed(feedScope)
   }
 
   const connectWith = async (recipientId: string) => {
     const supabase = createClient()
     const { error: connectError } = await supabase.from('connections').insert({ requester_id: userId, recipient_id: recipientId, status: 'pending' })
     if (connectError) setError(connectError.message)
-    else await loadFeed()
+    else await loadFeed(feedScope)
   }
 
   const acceptRequest = async (requesterId: string) => {
     const supabase = createClient()
     const { error: acceptError } = await supabase.from('connections').update({ status: 'accepted' }).eq('requester_id', requesterId).eq('recipient_id', userId).eq('status', 'pending')
     if (acceptError) setError(acceptError.message)
-    else await loadFeed()
+    else await loadFeed(feedScope)
   }
 
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]))
@@ -156,11 +173,14 @@ export default function TonightPage() {
   return (
     <main style={{ padding: '1.5rem', maxWidth: '600px', margin: '0 auto' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <div><p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>YOUR TOWER</p><h1 style={{ margin: '0.25rem 0 0' }}>Tonight</h1></div>
+        <div><p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>{feedScope === 'floor' ? 'YOUR FLOOR' : feedScope === 'dorm' ? 'YOUR DORM' : 'OTHER DORMS'}</p><h1 style={{ margin: '0.25rem 0 0' }}>Tonight</h1></div>
         {incomingRequests.length > 0 ? <span style={{ background: '#dc2626', color: '#fff', borderRadius: '999px', padding: '0.4rem 0.7rem', fontWeight: 700 }}>{incomingRequests.length} request{incomingRequests.length === 1 ? '' : 's'}</span> : null}
       </header>
 
       {error ? <p style={{ color: '#b91c1c', background: '#fef2f2', padding: '0.75rem', borderRadius: '8px' }}>{error}</p> : null}
+      <div role="tablist" aria-label="Tonight feed scope" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.4rem', marginBottom: '1.25rem', padding: '0.25rem', background: '#f1f5f9', borderRadius: '10px' }}>
+        {([['floor', 'My floor'], ['dorm', 'My dorm'], ['other-dorms', 'Other dorms']] as [FeedScope, string][]).map(([scope, label]) => <button key={scope} type="button" role="tab" aria-selected={feedScope === scope} onClick={() => setFeedScope(scope)} style={{ padding: '0.65rem 0.4rem', border: 0, borderRadius: '8px', background: feedScope === scope ? '#fff' : 'transparent', color: '#111827', fontWeight: feedScope === scope ? 800 : 600, cursor: 'pointer', boxShadow: feedScope === scope ? '0 1px 4px rgba(15,23,42,0.12)' : 'none' }}>{label}</button>)}
+      </div>
       <section style={{ ...cardStyle, marginBottom: '1.25rem', background: '#111827', color: '#fff' }}>
         <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem' }}>{myStatus ? 'You are going out tonight' : 'Make tonight less ordinary'}</h2>
         <p style={{ margin: '0 0 1rem', color: '#cbd5e1' }}>{myStatus?.note || 'Let people in your tower know you are open to plans.'}</p>
@@ -169,7 +189,7 @@ export default function TonightPage() {
 
       {incomingRequests.length > 0 ? <section style={{ marginBottom: '1.25rem' }}><h2 style={{ fontSize: '1.1rem' }}>Connection requests</h2>{incomingRequests.map((request) => { const requester = profileById.get(request.requester_id); return <div key={request.requester_id} style={{ ...cardStyle, marginBottom: '0.6rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}><span>{requester?.display_name || 'Someone in your tower'} wants to connect</span><button type="button" onClick={() => acceptRequest(request.requester_id)} style={{ padding: '0.55rem 0.8rem', border: 'none', borderRadius: '8px', background: '#16a34a', color: '#fff', fontWeight: 700 }}>Accept</button></div> })}</section> : null}
 
-      <section><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}><h2 style={{ fontSize: '1.1rem' }}>Out in {myProfile?.tower || 'your tower'}</h2><span style={{ color: '#64748b', fontSize: '0.9rem' }}>{totalUsers} onboarded</span></div>
+      <section><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}><h2 style={{ fontSize: '1.1rem' }}>{feedScope === 'floor' ? `Out on Floor ${myProfile?.floor ?? '—'}` : feedScope === 'dorm' ? `Out in ${myProfile?.tower || 'your dorm'}` : 'Out in other dorms'}</h2><span style={{ color: '#64748b', fontSize: '0.9rem' }}>{totalUsers} onboarded</span></div>
         {goingOut.length === 0 ? <div style={{ ...cardStyle, textAlign: 'center', padding: '2rem 1rem' }}><p style={{ margin: 0, fontWeight: 700 }}>Nobody&apos;s out yet. Be the one who starts it.</p><p style={{ margin: '0.5rem 0 0', color: '#64748b' }}>{totalUsers} people are part of Tonight in your tower.</p></div> : <div style={{ display: 'grid', gap: '0.8rem' }}>{goingOut.map((status) => { const profile = profileById.get(status.user_id); if (!profile) return null; const connected = hasAcceptedConnection(profile.id); const existing = connections.find((connection) => connection.requester_id === userId && connection.recipient_id === profile.id || connection.recipient_id === userId && connection.requester_id === profile.id); return <article key={status.user_id} style={cardStyle}><div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>{profile.photo_url ? <img src={profile.photo_url} alt="" style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '50%' }} /> : <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#e5e7eb' }} />}<div><h3 style={{ margin: 0 }}>{profile.display_name || 'Tonight user'}</h3><p style={{ margin: '0.2rem 0 0', color: '#64748b' }}>Floor {profile.floor ?? '—'} · {profile.major || 'Major not listed'}</p></div></div><p style={{ margin: '0.9rem 0 0' }}>{status.note || 'Open to making plans.'}</p><div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', margin: '0.7rem 0' }}>{(profile.interests ?? []).map((interest) => <span key={interest} style={{ padding: '0.3rem 0.55rem', borderRadius: '999px', background: '#f1f5f9', color: '#475569', fontSize: '0.8rem' }}>{interest}</span>)}</div>{connected ? <p style={{ margin: '0.6rem 0 0', color: '#15803d', fontWeight: 700 }}>Instagram: {profile.instagram_handle || 'No handle added'}</p> : profile.id === userId ? <span style={{ color: '#64748b', fontSize: '0.9rem' }}>Your status</span> : <button type="button" disabled={Boolean(existing)} onClick={() => connectWith(profile.id)} style={{ padding: '0.6rem 0.9rem', border: 'none', borderRadius: '8px', background: existing ? '#cbd5e1' : '#2563eb', color: '#fff', fontWeight: 700 }}>{existing ? existing.status === 'accepted' ? 'Connected' : 'Request sent' : 'Connect'}</button>}</article> })}</div>}
       </section>
 

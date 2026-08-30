@@ -19,6 +19,7 @@ const emptyFormData = {
   tower: '',
   floor: '',
   major: '',
+  instagramHandle: '',
   interests: [] as string[]
 }
 
@@ -82,6 +83,7 @@ export default function OnboardingPage() {
         tower: savedTower,
         floor: savedFloor,
         major: typeof profile.major === 'string' ? profile.major : '',
+        instagramHandle: typeof profile.instagram_handle === 'string' ? profile.instagram_handle : '',
         interests: parsedInterests
       })
 
@@ -244,6 +246,7 @@ export default function OnboardingPage() {
       tower: formData.tower || null,
       floor: Number.isInteger(normalizedFloor) ? normalizedFloor : null,
       major: formData.major || null,
+      instagram_handle: formData.instagramHandle.trim() || null,
       interests: formData.interests
     }
 
@@ -284,6 +287,7 @@ export default function OnboardingPage() {
       tower: formData.tower || null,
       floor: Number.isInteger(normalizedFloor) ? normalizedFloor : null,
       major: formData.major || null,
+      instagram_handle: formData.instagramHandle.trim() || null,
       interests: formData.interests
     }
 
@@ -422,6 +426,21 @@ export default function OnboardingPage() {
           </div>
 
           <div>
+            <label htmlFor="instagram-handle" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
+              Instagram handle (optional)
+            </label>
+            <input
+              id="instagram-handle"
+              type="text"
+              value={formData.instagramHandle}
+              onChange={(event) => updateField('instagramHandle', event.target.value)}
+              placeholder="@yourhandle"
+              maxLength={30}
+              style={{ width: '100%', padding: '0.85rem 1rem', borderRadius: '12px', border: '1px solid #d1d5db', fontSize: '1rem', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          <div>
             <label style={{ display: 'block', marginBottom: '0.75rem', fontWeight: 600 }}>
               Interest tags
             </label>
@@ -475,6 +494,10 @@ export default function OnboardingPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', padding: '0.9rem 1rem', borderRadius: '12px', background: '#fff', border: '1px solid #e2e8f0' }}>
             <span style={{ color: '#64748b' }}>Major</span>
             <strong>{formData.major || 'Not selected'}</strong>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', padding: '0.9rem 1rem', borderRadius: '12px', background: '#fff', border: '1px solid #e2e8f0' }}>
+            <span style={{ color: '#64748b' }}>Instagram</span>
+            <strong>{formData.instagramHandle.trim() || 'None'}</strong>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', padding: '0.9rem 1rem', borderRadius: '12px', background: '#fff', border: '1px solid #e2e8f0' }}>
             <span style={{ color: '#64748b' }}>Interests</span>

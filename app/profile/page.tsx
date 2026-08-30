@@ -14,12 +14,14 @@ type ProfileData = {
   tower: string | null
   floor: number | null
   major: string | null
+  instagram_handle: string | null
   interests: string[] | null
 }
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [major, setMajor] = useState('')
+  const [instagramHandle, setInstagramHandle] = useState('')
   const [interests, setInterests] = useState<string[]>([])
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -37,13 +39,14 @@ export default function ProfilePage() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('display_name, photo_url, tower, floor, major, interests')
+        .select('display_name, photo_url, tower, floor, major, instagram_handle, interests')
         .eq('id', authData.user.id)
         .maybeSingle()
 
       if (!error) {
         setProfile(data)
         setMajor(data?.major ?? '')
+        setInstagramHandle(data?.instagram_handle ?? '')
         setInterests(Array.isArray(data?.interests) ? data.interests : [])
       }
 
@@ -77,13 +80,14 @@ export default function ProfilePage() {
         {
           id: authData.user.id,
           major: major || null,
+          instagram_handle: instagramHandle.trim() || null,
           interests: interests
         },
         { onConflict: 'id' }
       )
 
     if (!error) {
-      setProfile((current) => current ? { ...current, major: major || null, interests } : current)
+      setProfile((current) => current ? { ...current, major: major || null, instagram_handle: instagramHandle.trim() || null, interests } : current)
       setIsEditing(false)
     }
 
@@ -93,6 +97,7 @@ export default function ProfilePage() {
   const startEditing = () => {
     if (!profile) return
     setMajor(profile.major ?? '')
+    setInstagramHandle(profile.instagram_handle ?? '')
     setInterests(Array.isArray(profile.interests) ? profile.interests : [])
     setIsEditing(true)
   }
@@ -149,6 +154,11 @@ export default function ProfilePage() {
                 <strong>{profile.interests && profile.interests.length > 0 ? profile.interests.join(', ') : 'No interests selected'}</strong>
               </div>
 
+              <div style={{ padding: '1rem', border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                <p style={{ margin: '0 0 0.25rem', color: '#64748b' }}>Instagram handle</p>
+                <strong>{profile.instagram_handle || 'None'}</strong>
+              </div>
+
               <button
                 type="button"
                 onClick={startEditing}
@@ -162,7 +172,7 @@ export default function ProfilePage() {
                   cursor: 'pointer'
                 }}
               >
-                Edit major & interests
+                Edit
               </button>
             </>
           ) : (
@@ -212,6 +222,21 @@ export default function ProfilePage() {
                     )
                   })}
                 </div>
+              </div>
+
+              <div style={{ padding: '1rem', border: '1px solid #e5e7eb', borderRadius: '12px' }}>
+                <label htmlFor="profile-instagram" style={{ display: 'block', marginBottom: '0.5rem', color: '#64748b', fontWeight: 600 }}>
+                  Instagram handle
+                </label>
+                <input
+                  id="profile-instagram"
+                  type="text"
+                  value={instagramHandle}
+                  onChange={(event) => setInstagramHandle(event.target.value)}
+                  placeholder="@yourhandle"
+                  maxLength={30}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '0.85rem 1rem', borderRadius: '12px', border: '1px solid #d1d5db', fontSize: '1rem' }}
+                />
               </div>
 
               <div style={{ display: 'flex', gap: '0.75rem' }}>

@@ -14,6 +14,6 @@ export const config = {
     * - PWA assets that must never be redirected to authentication
      * Feel free to modify this pattern to include more paths.
      */
-    '/((?!_next/static|_next/image|auth(?:/|$)|login(?:/|$)|sw\.js|workbox-.*\.js|manifest\.json|manifest\.webmanifest|favicon\.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|auth(?:/|$)|api/auth(?:/|$)|login(?:/|$)|sw\.js|workbox-.*\.js|manifest\.json|manifest\.webmanifest|favicon\.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

@@ -1,5 +1,5 @@
 const CACHE_NAME = 'tonight-cache-v2'
-const AUTH_PATHS = ['/auth', '/login']
+const AUTH_PATHS = ['/auth', '/api/auth', '/login']
 const APP_SHELL = [
   '/',
   '/tonight',

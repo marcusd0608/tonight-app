@@ -10,6 +10,7 @@ import {
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { ChangeEvent, useEffect, useRef, useState } from 'react'
+import { trackEvent } from '@/utils/analytics'
 
 const stepLabels = ['Name + Photo', 'Tower + Floor', 'Major + Interest', 'Confirmation']
 
@@ -295,7 +296,16 @@ export default function OnboardingPage() {
 
     if (error) {
       console.error('Failed to complete onboarding:', error)
+      router.push('/tonight')
+      return
     }
+
+    await trackEvent('completed_onboarding', {
+      user_id: authData.user.id,
+      tower: payload.tower,
+      floor: payload.floor,
+      major: payload.major,
+    })
 
     router.push('/tonight')
   }

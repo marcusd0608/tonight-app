@@ -18,6 +18,7 @@ type ProfileData = {
   major: string | null
   instagram_handle: string | null
   interests: string[] | null
+  is_admin?: boolean | null
 }
 
 type PostedNight = {
@@ -66,7 +67,7 @@ export default function ProfilePage() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, display_name, photo_url, tower, floor, major, instagram_handle, interests')
+        .select('id, display_name, photo_url, tower, floor, major, instagram_handle, interests, is_admin')
         .eq('id', authData.user.id)
         .maybeSingle()
 
@@ -323,6 +324,12 @@ export default function ProfilePage() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '-0.25rem' }}>
             {(profile.interests ?? []).length > 0 ? profile.interests?.map((interest) => <span key={interest} style={{ padding: '0.3rem 0.55rem', borderRadius: '999px', background: '#f1f5f9', color: '#475569', fontSize: '0.75rem' }}>{interest}</span>) : <span style={{ color: '#64748b', fontSize: '0.8rem' }}>No interests selected</span>}
           </div>
+
+          {profile.is_admin ? (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Link href="/admin" style={{ display: 'inline-flex', alignItems: 'center', padding: '0.7rem 1rem', borderRadius: '10px', background: '#111827', color: '#fff', textDecoration: 'none', fontWeight: 700 }}>View admin</Link>
+            </div>
+          ) : null}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '0.5rem' }}>
             <div style={{ padding: '0.8rem 0.45rem', textAlign: 'center', background: '#111827', color: '#fff', borderRadius: '12px' }}>

@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef } from 'react'
+import { trackEvent } from '@/utils/analytics'
 
 const supabase = createClient()
 
@@ -113,6 +114,12 @@ export default function AuthPage() {
       setError(sessionError?.message || 'Your session could not be established. Please try again.')
       return
     }
+
+    await trackEvent('user_signed_up', {
+      email,
+      method: 'otp',
+      user_id: sessionData.session.user.id,
+    })
 
     await routeAuthenticatedUser(sessionData.session.user.id)
   }

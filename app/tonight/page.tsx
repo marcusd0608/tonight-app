@@ -2,6 +2,7 @@
 
 import { createClient } from '@/utils/supabase/client'
 import { useCallback, useEffect, useState } from 'react'
+import { trackEvent } from '@/utils/analytics'
 
 type Profile = {
   id: string
@@ -14,11 +15,14 @@ type Profile = {
   instagram_handle: string | null
 }
 
+type FeedScope = 'floor' | 'dorm' | 'other-dorms'
+
 type GoingOut = {
   user_id: string
   note: string | null
   expires_at: string
   created_at: string
+  visibility?: FeedScope | null
 }
 
 type Connection = {
@@ -26,8 +30,6 @@ type Connection = {
   recipient_id: string
   status: string
 }
-
-type FeedScope = 'floor' | 'dorm' | 'other-dorms'
 
 const cardStyle = { padding: '1rem', border: '1px solid #e5e7eb', borderRadius: '14px', background: '#fff' }
 
@@ -64,6 +66,8 @@ export default function TonightPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [feedScope, setFeedScope] = useState<FeedScope>('floor')
+  const [statusVisibility, setStatusVisibility] = useState<FeedScope>('floor')
+  const [myStatus, setMyStatus] = useState<GoingOut | null>(null)
 
   const loadFeed = useCallback(async (scope: FeedScope = feedScope) => {
     const supabase = createClient()
@@ -99,7 +103,7 @@ export default function TonightPage() {
     const scopedProfiles = (towerProfiles ?? []).filter((profile) => {
       if (scope === 'floor') return profile.tower === currentProfile.tower && profile.floor === currentProfile.floor
       if (scope === 'dorm') return profile.tower === currentProfile.tower
-      return profile.tower !== currentProfile.tower
+      return true
     })
     const visibleTowerProfiles = scopedProfiles.filter((profile) => !blockedIds.includes(profile.id))
     const towerIds = visibleTowerProfiles.map((profile) => profile.id)
@@ -108,19 +112,54 @@ export default function TonightPage() {
 
     if (towerIds.length === 0) {
       setGoingOut([])
+      setMyStatus(null)
       setConnections([])
       return
     }
 
     const [{ data: statuses, error: statusError }, { data: connectionRows, error: connectionError }] = await Promise.all([
-      supabase.from('going_out').select('user_id, note, expires_at, created_at').in('user_id', towerIds).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
+      supabase.from('going_out').select('user_id, note, expires_at, created_at, visibility').gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
       supabase.from('connections').select('requester_id, recipient_id, status').or(`requester_id.eq.${authData.user.id},recipient_id.eq.${authData.user.id}`)
     ])
     if (statusError || connectionError) {
       setError(statusError?.message ?? connectionError?.message ?? 'Unable to load tonight.')
       return
     }
-    setGoingOut(statuses ?? [])
+
+    const normalizedStatuses = (statuses ?? []).map((status) => ({
+      ...status,
+      visibility: (status.visibility ?? 'dorm') as FeedScope,
+    }))
+
+    const profileById = new Map(towerProfiles.map((profile) => [profile.id, profile]))
+    const visibleStatuses = normalizedStatuses.filter((status) => {
+      const profile = profileById.get(status.user_id)
+      if (!profile || !profile.tower) return false
+
+      const sameTower = profile.tower === currentProfile.tower
+      const sameFloor = sameTower && profile.floor === currentProfile.floor
+
+      if (scope === 'floor') {
+        return sameFloor && (
+          status.visibility === 'floor' ||
+          status.visibility === 'dorm' ||
+          (status.visibility === 'other-dorms' && status.user_id === authData.user.id)
+        )
+      }
+
+      if (scope === 'dorm') {
+        return sameTower && (
+          status.visibility === 'dorm' ||
+          (status.visibility === 'floor' && sameFloor) ||
+          (status.visibility === 'other-dorms' && status.user_id === authData.user.id)
+        )
+      }
+
+      return status.visibility === 'other-dorms'
+    })
+
+    setGoingOut(visibleStatuses)
+    setMyStatus(normalizedStatuses.find((status) => status.user_id === authData.user.id) ?? null)
     setConnections((connectionRows ?? []).filter((connection) => !blockedIds.includes(connection.requester_id) && !blockedIds.includes(connection.recipient_id)))
   }, [feedScope])
 
@@ -128,7 +167,27 @@ export default function TonightPage() {
     queueMicrotask(() => { void loadFeed(feedScope) })
   }, [feedScope, loadFeed])
 
-  const myStatus = goingOut.find((status) => status.user_id === userId)
+  useEffect(() => {
+    const now = new Date()
+    const isFriday = now.getDay() === 5
+    const localHour = now.getHours()
+    const isNightWindow = localHour >= 17 || localHour < 4
+
+    if (!isFriday || !isNightWindow) return
+
+    const storageKey = 'tonight_friday_night_open_logged'
+    const alreadyLogged = window.sessionStorage.getItem(storageKey)
+    if (alreadyLogged) return
+
+    void trackEvent('friday_night_open', {
+      day: 'friday',
+      hour: localHour,
+      user_id: userId || null,
+    })
+
+    window.sessionStorage.setItem(storageKey, 'true')
+  }, [userId])
+
   const incomingRequests = connections.filter((connection) => connection.recipient_id === userId && connection.status === 'pending')
 
   const submitGoingOut = async () => {
@@ -136,13 +195,27 @@ export default function TonightPage() {
     setIsSubmitting(true)
     setError('')
     const supabase = createClient()
+    const selectedScope = statusVisibility
+    const { error: deleteError } = await supabase.from('going_out').delete().eq('user_id', userId).gt('expires_at', new Date().toISOString())
+    if (deleteError) {
+      setError(deleteError.message)
+      setIsSubmitting(false)
+      return
+    }
+
     const { error: insertError } = await supabase.from('going_out').insert({
       user_id: userId,
       note: note.trim() || null,
+      visibility: selectedScope,
       expires_at: getLosAngelesExpiration()
     })
     if (insertError) setError(insertError.message)
-    else { setIsModalOpen(false); setNote(''); await loadFeed(feedScope) }
+    else {
+      setIsModalOpen(false)
+      setNote('')
+      setStatusVisibility(feedScope)
+      await loadFeed(feedScope)
+    }
     setIsSubmitting(false)
   }
 
@@ -150,7 +223,10 @@ export default function TonightPage() {
     const supabase = createClient()
     const { error: deleteError } = await supabase.from('going_out').delete().eq('user_id', userId).gt('expires_at', new Date().toISOString())
     if (deleteError) setError(deleteError.message)
-    else await loadFeed(feedScope)
+    else {
+      setMyStatus(null)
+      await loadFeed(feedScope)
+    }
   }
 
   const connectWith = async (recipientId: string) => {
@@ -182,9 +258,9 @@ export default function TonightPage() {
         {([['floor', 'My floor'], ['dorm', 'My dorm'], ['other-dorms', 'Other dorms']] as [FeedScope, string][]).map(([scope, label]) => <button key={scope} type="button" role="tab" aria-selected={feedScope === scope} onClick={() => setFeedScope(scope)} style={{ padding: '0.65rem 0.4rem', border: 0, borderRadius: '8px', background: feedScope === scope ? '#fff' : 'transparent', color: '#111827', fontWeight: feedScope === scope ? 800 : 600, cursor: 'pointer', boxShadow: feedScope === scope ? '0 1px 4px rgba(15,23,42,0.12)' : 'none' }}>{label}</button>)}
       </div>
       <section style={{ ...cardStyle, marginBottom: '1.25rem', background: '#111827', color: '#fff' }}>
-        <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem' }}>{myStatus ? 'You are going out tonight' : 'Make tonight less ordinary'}</h2>
-        <p style={{ margin: '0 0 1rem', color: '#cbd5e1' }}>{myStatus?.note || 'Let people in your tower know you are open to plans.'}</p>
-        {myStatus ? <button type="button" onClick={cancelGoingOut} style={{ padding: '0.7rem 1rem', border: '1px solid #64748b', borderRadius: '8px', background: 'transparent', color: '#fff', fontWeight: 700 }}>Turn off status</button> : <button type="button" onClick={() => setIsModalOpen(true)} style={{ padding: '0.8rem 1rem', border: 'none', borderRadius: '8px', background: '#fbbf24', color: '#111827', fontWeight: 800 }}>I&apos;m going out tonight</button>}
+        <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem' }}>{myStatus ? 'You are going out tonight' : (feedScope === 'floor' ? 'Make tonight less ordinary on your floor' : feedScope === 'dorm' ? 'Make tonight less ordinary in your dorm' : 'Make tonight less ordinary across campus')}</h2>
+        <p style={{ margin: '0 0 1rem', color: '#cbd5e1' }}>{myStatus?.note || (feedScope === 'floor' ? 'Let people on your floor know you are open to plans.' : feedScope === 'dorm' ? 'Let people in your dorm know you are open to plans.' : 'Let people across campus know you are open to plans.')}</p>
+        {myStatus ? <button type="button" onClick={cancelGoingOut} style={{ padding: '0.7rem 1rem', border: '1px solid #64748b', borderRadius: '8px', background: 'transparent', color: '#fff', fontWeight: 700 }}>Turn off status</button> : <button type="button" onClick={() => { setStatusVisibility(feedScope); setIsModalOpen(true) }} style={{ padding: '0.8rem 1rem', border: 'none', borderRadius: '8px', background: '#fbbf24', color: '#111827', fontWeight: 800 }}>I&apos;m going out tonight</button>}
       </section>
 
       {incomingRequests.length > 0 ? <section style={{ marginBottom: '1.25rem' }}><h2 style={{ fontSize: '1.1rem' }}>Connection requests</h2>{incomingRequests.map((request) => { const requester = profileById.get(request.requester_id); return <div key={request.requester_id} style={{ ...cardStyle, marginBottom: '0.6rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}><span>{requester?.display_name || 'Someone in your tower'} wants to connect</span><button type="button" onClick={() => acceptRequest(request.requester_id)} style={{ padding: '0.55rem 0.8rem', border: 'none', borderRadius: '8px', background: '#16a34a', color: '#fff', fontWeight: 700 }}>Accept</button></div> })}</section> : null}
@@ -193,7 +269,7 @@ export default function TonightPage() {
         {goingOut.length === 0 ? <div style={{ ...cardStyle, textAlign: 'center', padding: '2rem 1rem' }}><p style={{ margin: 0, fontWeight: 700 }}>Nobody&apos;s out yet. Be the one who starts it.</p><p style={{ margin: '0.5rem 0 0', color: '#64748b' }}>{totalUsers} people are part of Tonight in your tower.</p></div> : <div style={{ display: 'grid', gap: '0.8rem' }}>{goingOut.map((status) => { const profile = profileById.get(status.user_id); if (!profile) return null; const connected = hasAcceptedConnection(profile.id); const existing = connections.find((connection) => connection.requester_id === userId && connection.recipient_id === profile.id || connection.recipient_id === userId && connection.requester_id === profile.id); return <article key={status.user_id} style={cardStyle}><div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>{profile.photo_url ? <img src={profile.photo_url} alt="" style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '50%' }} /> : <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#e5e7eb' }} />}<div><h3 style={{ margin: 0 }}>{profile.display_name || 'Tonight user'}</h3><p style={{ margin: '0.2rem 0 0', color: '#64748b' }}>Floor {profile.floor ?? '—'} · {profile.major || 'Major not listed'}</p></div></div><p style={{ margin: '0.9rem 0 0' }}>{status.note || 'Open to making plans.'}</p><div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', margin: '0.7rem 0' }}>{(profile.interests ?? []).map((interest) => <span key={interest} style={{ padding: '0.3rem 0.55rem', borderRadius: '999px', background: '#f1f5f9', color: '#475569', fontSize: '0.8rem' }}>{interest}</span>)}</div>{connected ? <p style={{ margin: '0.6rem 0 0', color: '#15803d', fontWeight: 700 }}>Instagram: {profile.instagram_handle || 'No handle added'}</p> : profile.id === userId ? <span style={{ color: '#64748b', fontSize: '0.9rem' }}>Your status</span> : <button type="button" disabled={Boolean(existing)} onClick={() => connectWith(profile.id)} style={{ padding: '0.6rem 0.9rem', border: 'none', borderRadius: '8px', background: existing ? '#cbd5e1' : '#2563eb', color: '#fff', fontWeight: 700 }}>{existing ? existing.status === 'accepted' ? 'Connected' : 'Request sent' : 'Connect'}</button>}</article> })}</div>}
       </section>
 
-      {isModalOpen ? <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'grid', placeItems: 'center', padding: '1rem', zIndex: 2000 }}><div style={{ ...cardStyle, width: '100%', maxWidth: '420px' }}><h2 style={{ marginTop: 0 }}>Going out tonight?</h2><label htmlFor="going-out-note">Add a short note (optional)</label><textarea id="going-out-note" value={note} onChange={(event) => setNote(event.target.value.slice(0, 60))} maxLength={60} placeholder="Looking for a group" rows={3} style={{ width: '100%', boxSizing: 'border-box', margin: '0.6rem 0 0.3rem', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1', resize: 'vertical' }} /><p style={{ margin: '0 0 1rem', color: '#64748b', textAlign: 'right', fontSize: '0.8rem' }}>{note.length}/60</p><div style={{ display: 'flex', gap: '0.7rem' }}><button type="button" onClick={() => setIsModalOpen(false)} style={{ flex: 1, padding: '0.7rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}>Cancel</button><button type="button" onClick={submitGoingOut} disabled={isSubmitting} style={{ flex: 1, padding: '0.7rem', borderRadius: '8px', border: 'none', background: '#111827', color: '#fff', fontWeight: 700 }}>{isSubmitting ? 'Saving...' : 'Post status'}</button></div></div></div> : null}
+      {isModalOpen ? <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'grid', placeItems: 'center', padding: '1rem', zIndex: 2000 }}><div style={{ ...cardStyle, width: '100%', maxWidth: '420px' }}><h2 style={{ marginTop: 0 }}>Going out tonight?</h2><div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.5rem', marginBottom: '1rem' }}>{(['floor', 'dorm', 'other-dorms'] as FeedScope[]).map((scope) => <button key={scope} type="button" onClick={() => setStatusVisibility(scope)} style={{ padding: '0.7rem 0.4rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: statusVisibility === scope ? '#111827' : '#fff', color: statusVisibility === scope ? '#fff' : '#111827', fontWeight: 700 }}>{scope === 'floor' ? 'Floor only' : scope === 'dorm' ? 'My dorm' : 'Other dorms'}</button>)}</div><label htmlFor="going-out-note">Add a short note (optional)</label><textarea id="going-out-note" value={note} onChange={(event) => setNote(event.target.value.slice(0, 60))} maxLength={60} placeholder="Looking for a group" rows={3} style={{ width: '100%', boxSizing: 'border-box', margin: '0.6rem 0 0.3rem', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1', resize: 'vertical' }} /><p style={{ margin: '0 0 1rem', color: '#64748b', textAlign: 'right', fontSize: '0.8rem' }}>{note.length}/60</p><div style={{ display: 'flex', gap: '0.7rem' }}><button type="button" onClick={() => setIsModalOpen(false)} style={{ flex: 1, padding: '0.7rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}>Cancel</button><button type="button" onClick={submitGoingOut} disabled={isSubmitting} style={{ flex: 1, padding: '0.7rem', borderRadius: '8px', border: 'none', background: '#111827', color: '#fff', fontWeight: 700 }}>{isSubmitting ? 'Saving...' : 'Post status'}</button></div></div></div> : null}
     </main>
   )
 }

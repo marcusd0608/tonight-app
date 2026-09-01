@@ -1,4 +1,5 @@
-const CACHE_NAME = 'tonight-cache-v1'
+const CACHE_NAME = 'tonight-cache-v2'
+const AUTH_PATHS = ['/auth', '/login']
 const APP_SHELL = [
   '/',
   '/tonight',
@@ -30,7 +31,10 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return
+  const requestUrl = new URL(event.request.url)
+  const isAuthPath = AUTH_PATHS.some((path) => requestUrl.pathname === path || requestUrl.pathname.startsWith(`${path}/`))
+
+  if (event.request.method !== 'GET' || requestUrl.origin !== self.location.origin || isAuthPath) return
 
   event.respondWith(
     caches.match(event.request).then((cached) => {

@@ -16,7 +16,6 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const isRedirecting = useRef(false)
-  const redirectTimer = useRef<number | null>(null)
 
   const routeAuthenticatedUser = useCallback(async (userId: string) => {
     if (isRedirecting.current) return
@@ -39,10 +38,7 @@ export default function AuthPage() {
 
     isRedirecting.current = true
     router.refresh()
-    router.push(destination)
-    redirectTimer.current = window.setTimeout(() => {
-      window.location.href = destination
-    }, 1500)
+    router.replace(destination)
   }, [router])
 
   useEffect(() => {
@@ -54,9 +50,6 @@ export default function AuthPage() {
 
     return () => {
       authListener.subscription.unsubscribe()
-      if (redirectTimer.current !== null) {
-        window.clearTimeout(redirectTimer.current)
-      }
     }
   }, [routeAuthenticatedUser])
 
@@ -71,13 +64,15 @@ export default function AuthPage() {
     }
 
     setLoading(true)
+
+    const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || window.location.origin
     
     // Explicitly request OTP code delivery
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         shouldCreateUser: true,
-        emailRedirectTo: undefined,
+        emailRedirectTo: `${siteOrigin}/auth/callback`,
       },
     })
 

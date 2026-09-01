@@ -25,6 +25,34 @@ create index if not exists blocks_blocker_idx on public.blocks(blocker_id);
 create index if not exists blocks_blocked_idx on public.blocks(blocked_id);
 create index if not exists reports_status_idx on public.reports(status, created_at desc);
 
+create table if not exists public.analytics_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  event_name text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists analytics_events_created_at_idx on public.analytics_events(created_at desc);
+create index if not exists analytics_events_event_name_idx on public.analytics_events(event_name, created_at desc);
+
+alter table public.analytics_events enable row level security;
+
+drop policy if exists "Authenticated users can record their own analytics" on public.analytics_events;
+create policy "Authenticated users can record their own analytics" on public.analytics_events
+for insert to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "Admins can view analytics" on public.analytics_events;
+create policy "Admins can view analytics" on public.analytics_events
+for select to authenticated
+using (exists (
+  select 1
+  from public.profiles
+  where profiles.id = auth.uid()
+    and profiles.is_admin = true
+));
+
 alter table public.blocks enable row level security;
 alter table public.reports enable row level security;
 

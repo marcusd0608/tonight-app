@@ -7,13 +7,14 @@ export async function trackEvent(
   const supabase = createClient()
   const { data: authData, error: authError } = await supabase.auth.getUser()
 
-  if (authError) {
-    console.error('Failed to resolve user for analytics event:', authError.message)
-    return { success: false, error: authError }
+  if (authError || !authData.user) {
+    const error = authError ?? new Error('No authenticated user session.')
+    console.error('Failed to resolve user for analytics event:', error.message)
+    return { success: false, error }
   }
 
   const { error } = await supabase.from('analytics_events').insert({
-    user_id: authData.user?.id ?? null,
+    user_id: authData.user.id,
     event_name: eventName,
     metadata,
   })

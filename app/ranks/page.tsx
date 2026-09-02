@@ -1,6 +1,7 @@
 'use client'
 
 import { createClient } from '@/utils/supabase/client'
+import AppHeader from '@/components/AppHeader'
 import { useEffect, useState } from 'react'
 
 type Profile = { id: string; tower: string | null; floor: number | null }
@@ -88,8 +89,8 @@ export default function RanksPage() {
 
   return (
     <main style={{ padding: '1.5rem', maxWidth: '600px', margin: '0 auto' }}>
+      <AppHeader title="Ranks" />
       <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>WEEKLY LEADERBOARD</p>
-      <h1 style={{ margin: '0.25rem 0 0.4rem' }}>Ranks</h1>
       <p style={{ margin: '0 0 1.5rem', color: '#64748b' }}>Floor energy, normalized by the number of residents.</p>
       {message ? <p role="alert" style={{ padding: '0.75rem', color: '#b91c1c', background: '#fef2f2', borderRadius: '8px' }}>{message}</p> : null}
       {loading ? <p>Loading ranks...</p> : ranks.length === 0 ? <div style={{ padding: '1.5rem', textAlign: 'center', border: '1px solid #e5e7eb', borderRadius: '12px' }}>No ranked floors yet.</div> : <div style={{ display: 'grid', gap: '0.75rem' }}>{ranks.map((rank, index) => <article key={`${rank.tower}-${rank.floor}`} style={{ padding: '1rem', border: '1px solid #e5e7eb', borderRadius: '14px', background: index === 0 ? '#111827' : '#fff', color: index === 0 ? '#fff' : '#111827' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}><div><p style={{ margin: 0, color: index === 0 ? '#fbbf24' : '#64748b', fontWeight: 800 }}>#{index + 1}</p><h2 style={{ margin: '0.2rem 0', fontSize: '1.2rem' }}>{rank.tower}, Floor {rank.floor}</h2><p style={{ margin: 0, color: index === 0 ? '#cbd5e1' : '#64748b', fontSize: '0.85rem' }}>{rank.activeUsers} active of {rank.population} residents</p></div><strong style={{ fontSize: '1.5rem' }}>{rank.points.toFixed(1)}<span style={{ display: 'block', fontSize: '0.7rem', textAlign: 'right', color: index === 0 ? '#cbd5e1' : '#64748b' }}>points / resident</span></strong></div></article>)}</div>}

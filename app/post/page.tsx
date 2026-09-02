@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import AppHeader from '@/components/AppHeader'
 
 type Post = { id: string; userId: string; displayName: string; profilePhotoUrl: string | null; eventName: string; description: string | null; vibeTags: string[]; photoUrl: string | null; createdAt: string }
 type Connection = { requester_id: string; recipient_id: string; status: string }
@@ -93,7 +94,7 @@ export default function PostsPage() {
   }
 
   return <main style={{ padding: '1.5rem', maxWidth: '600px', margin: '0 auto' }}>
-    <h1 style={{ margin: '0 0 1.5rem' }}>Posts</h1>
+    <AppHeader title="Posts" />
     {message ? <p role="status" style={{ padding: '0.75rem', borderRadius: '8px', background: '#f1f5f9' }}>{message}</p> : null}
     {loading ? <p>Loading posts...</p> : posts.length === 0 ? <p style={{ color: '#64748b' }}>No posts yet. Be the first to share a night.</p> : <div style={{ display: 'grid', gap: '1.25rem' }}>{posts.map((post) => {
       const connection = connectionFor(post.userId)

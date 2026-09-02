@@ -5,6 +5,8 @@ import {
   onboardingMajors
 } from '@/app/lib/constants'
 import LogoutButton from '@/components/LogoutButton'
+import AppHeader from '@/components/AppHeader'
+import PushNotifications from '@/components/PushNotifications'
 import { createClient } from '@/utils/supabase/client'
 import Link from 'next/link'
 import { ChangeEvent, useEffect, useRef, useState } from 'react'
@@ -283,9 +285,9 @@ export default function ProfilePage() {
   }
 
   return (
-    <main style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
+    <main style={{ padding: '1.5rem', maxWidth: '600px', margin: '0 auto' }}>
+      <AppHeader title="Profile" />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h1 style={{ margin: 0 }}>Profile</h1>
         <LogoutButton />
       </div>
 
@@ -330,6 +332,8 @@ export default function ProfilePage() {
               <Link href="/admin" style={{ display: 'inline-flex', alignItems: 'center', padding: '0.7rem 1rem', borderRadius: '10px', background: '#111827', color: '#fff', textDecoration: 'none', fontWeight: 700 }}>View admin</Link>
             </div>
           ) : null}
+
+          <PushNotifications />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '0.5rem' }}>
             <div style={{ padding: '0.8rem 0.45rem', textAlign: 'center', background: '#111827', color: '#fff', borderRadius: '12px' }}>

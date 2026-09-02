@@ -25,6 +25,107 @@ create index if not exists blocks_blocker_idx on public.blocks(blocker_id);
 create index if not exists blocks_blocked_idx on public.blocks(blocked_id);
 create index if not exists reports_status_idx on public.reports(status, created_at desc);
 
+-- Tonight group activities and host-approved membership.
+alter table public.going_out add column if not exists activity_category text not null default 'Other';
+alter table public.going_out add column if not exists activity_details text;
+alter table public.going_out add column if not exists max_capacity integer;
+alter table public.going_out drop constraint if exists going_out_activity_category_check;
+alter table public.going_out add constraint going_out_activity_category_check
+  check (activity_category in ('Sports', 'Gym', 'Boba', 'Food', 'Study', 'Party', 'Other'));
+alter table public.going_out drop constraint if exists going_out_max_capacity_check;
+alter table public.going_out add constraint going_out_max_capacity_check
+  check (max_capacity is null or max_capacity >= 2);
+
+create table if not exists public.join_requests (
+  id uuid primary key default gen_random_uuid(),
+  status_id uuid not null references public.going_out(id) on delete cascade,
+  requester_id uuid not null references public.profiles(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  created_at timestamptz not null default now(),
+  unique (status_id, requester_id)
+);
+
+create index if not exists join_requests_status_idx on public.join_requests(status_id, status, created_at);
+create index if not exists join_requests_requester_idx on public.join_requests(requester_id, status);
+
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  endpoint text not null unique,
+  subscription jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions(user_id);
+alter table public.push_subscriptions enable row level security;
+
+drop policy if exists "Users can manage their push subscriptions" on public.push_subscriptions;
+create policy "Users can manage their push subscriptions" on public.push_subscriptions
+for all to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+alter table public.join_requests enable row level security;
+
+drop policy if exists "Users can request to join" on public.join_requests;
+create policy "Users can request to join" on public.join_requests
+for insert to authenticated
+with check (auth.uid() = requester_id and status = 'pending');
+
+drop policy if exists "Users can view their join requests" on public.join_requests;
+create policy "Users can view their join requests" on public.join_requests
+for select to authenticated
+using (auth.uid() = requester_id or exists (
+  select 1 from public.going_out
+  where going_out.id = join_requests.status_id
+    and going_out.user_id = auth.uid()
+));
+
+drop policy if exists "Hosts can review join requests" on public.join_requests;
+create policy "Hosts can review join requests" on public.join_requests
+for update to authenticated
+using (exists (
+  select 1 from public.going_out
+  where going_out.id = join_requests.status_id
+    and going_out.user_id = auth.uid()
+))
+with check (status in ('approved', 'rejected') and exists (
+  select 1 from public.going_out
+  where going_out.id = join_requests.status_id
+    and going_out.user_id = auth.uid()
+));
+
+create or replace function public.enforce_join_request_capacity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  capacity integer;
+  approved_count integer;
+begin
+  if new.status = 'approved' and (old.status is distinct from 'approved') then
+    select max_capacity into capacity from public.going_out where id = new.status_id for update;
+    if capacity is not null then
+      select count(*) into approved_count
+      from public.join_requests
+      where status_id = new.status_id and status = 'approved' and id <> new.id;
+      if approved_count >= capacity - 1 then
+        raise exception 'This activity has reached its maximum group size.';
+      end if;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_join_request_capacity on public.join_requests;
+create trigger enforce_join_request_capacity
+before update of status on public.join_requests
+for each row execute function public.enforce_join_request_capacity();
+
 create table if not exists public.analytics_events (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users(id) on delete set null,

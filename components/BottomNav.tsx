@@ -16,7 +16,7 @@ export default function BottomNav() {
   return (
     <nav style={{
       position: 'fixed',
-      bottom: 0,
+      bottom: 'env(safe-area-inset-bottom)',
       left: 0,
       right: 0,
       background: '#fff',

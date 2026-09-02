@@ -13,6 +13,18 @@ export async function trackEvent(
     return { success: false, error }
   }
 
+  // Check if profile exists (required by foreign key constraint)
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('id', authData.user.id)
+    .maybeSingle()
+
+  if (profileError || !profile) {
+    console.warn('Profile does not exist yet for user, skipping analytics event:', authData.user.id)
+    return { success: false, error: new Error('Profile does not exist yet') }
+  }
+
   const { error } = await supabase.from('analytics_events').insert({
     user_id: authData.user.id,
     event_name: eventName,

@@ -7,7 +7,9 @@ export default function PWARegister() {
     if (process.env.NODE_ENV === 'development' || !('serviceWorker' in navigator)) return
 
     const register = () => {
-      navigator.serviceWorker.register('/sw.js').catch((error) => {
+      navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((registration) => {
+        void registration.update()
+      }).catch((error) => {
         console.error('Service worker registration failed:', error)
       })
     }

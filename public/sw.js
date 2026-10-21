@@ -1,19 +1,6 @@
-const CACHE_NAME = 'tonight-cache-v3'
-const AUTH_PATHS = ['/auth', '/api/auth', '/login']
-const APP_SHELL = [
-  '/',
-  '/tonight',
-  '/post',
-  '/profile',
-  '/ranks',
-  '/manifest.webmanifest',
-  '/icon.svg',
-]
+const CACHE_NAME = 'tonight-static-v4'
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).catch(() => undefined)
-  )
   self.skipWaiting()
 })
 
@@ -54,9 +41,13 @@ self.addEventListener('notificationclick', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url)
-  const isAuthPath = AUTH_PATHS.some((path) => requestUrl.pathname === path || requestUrl.pathname.startsWith(`${path}/`))
+  const cacheableDestinations = ['style', 'script', 'image', 'font']
 
-  if (event.request.method !== 'GET' || requestUrl.origin !== self.location.origin || isAuthPath) return
+  if (
+    event.request.method !== 'GET' ||
+    requestUrl.origin !== self.location.origin ||
+    !cacheableDestinations.includes(event.request.destination)
+  ) return
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
@@ -66,10 +57,10 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           if (!response.ok) return response
           const responseClone = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone))
+          void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone))
           return response
         })
-        .catch(() => event.request.mode === 'navigate' ? caches.match('/tonight') : Response.error())
+        .catch(() => Response.error())
     })
   )
 })
